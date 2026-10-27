@@ -1,0 +1,246 @@
+---
+title: "Exercise 4: Building an analysis-ready first-IHD-event dataset"
+format: html
+execute:
+  echo: true
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- link data with different units of observation;
+- understand one-to-many joins;
+- create broad and strict IHD event indicators;
+- select a first qualifying IHD event;
+- create a person-level dataset for later analysis.
+
+## Load packages and data
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(here)
+
+source(here("R", "01_helpers.R"))
+
+cohort <- read_csv(
+  here("data", "raw", "cohort_baseline.csv"),
+  show_col_types = FALSE
+) |> 
+  mutate(baseline_date = ymd(baseline_date))
+
+contacts <- read_csv(
+  here("data", "raw", "registry_contacts.csv"),
+  show_col_types = FALSE
+) |> 
+  mutate(
+    admission_date = parse_mixed_date(admission_date_raw),
+    discharge_date = parse_mixed_date(discharge_date_raw),
+    contact_date = parse_mixed_date(contact_date_raw)
+  )
+
+diagnoses <- read_csv(
+  here("data", "raw", "registry_diagnoses.csv"),
+  show_col_types = FALSE
+) |> 
+  mutate(
+    diagnosis_date = parse_mixed_date(diagnosis_date_raw),
+    code_standardised = clean_code(diagnosis_code)
+  )
+
+lookup <- read_csv(
+  here("data", "raw", "icd_harmonisation_lookup.csv"),
+  show_col_types = FALSE
+)
+
+followup <- read_csv(
+  here("data", "raw", "death_followup.csv"),
+  show_col_types = FALSE
+) |> 
+  mutate(
+    death_date = parse_mixed_date(death_date_raw),
+    administrative_end_followup = ymd(administrative_end_followup_raw)
+  )
+```
+
+## Task 1: Create a diagnosis-level event dataset
+
+Join diagnosis data to contact data and the ICD lookup table.
+
+```{r}
+event_data <- diagnoses |> 
+  left_join(
+    contacts |> 
+      select(
+        contact_id,
+        person_id,
+        hospital,
+        department,
+        setting,
+        admission_date,
+        discharge_date,
+        contact_date
+      ),
+    by = c("contact_id", "person_id")
+  ) |> 
+  left_join(
+    lookup |> 
+      select(
+        coding_system,
+        code_standardised,
+        clinical_group,
+        include_broad_ihd,
+        include_strict_ihd
+      ),
+    by = c("coding_system", "code_standardised")
+  ) |> 
+  mutate(
+    event_date = coalesce(admission_date, contact_date, diagnosis_date),
+    broad_ihd = replace_na(include_broad_ihd, FALSE)
+  )
+
+event_data |> 
+  arrange(person_id, event_date)
+```
+
+Questions:
+
+1. What does one row represent in `event_data`?
+2. Why does this dataset contain multiple rows per participant?
+3. Why would it be incorrect to treat it as a person-level analysis dataset?
+
+## Task 2: Create a strict phenotype
+
+Create a strict inpatient-primary IHD indicator.
+
+```{r}
+event_data <- event_data |> 
+  mutate(
+    strict_ihd_inpatient = broad_ihd &
+      setting == "Inpatient" &
+      diagnosis_position == "Primary"
+  )
+```
+
+Create a repeated outpatient IHD indicator.
+
+```{r}
+outpatient_counts <- event_data |> 
+  filter(broad_ihd, setting == "Outpatient") |> 
+  distinct(person_id, event_date) |> 
+  count(person_id, name = "n_outpatient_ihd_dates")
+
+event_data <- event_data |> 
+  left_join(outpatient_counts, by = "person_id") |> 
+  mutate(
+    strict_ihd_outpatient = setting == "Outpatient" &
+      replace_na(n_outpatient_ihd_dates, 0) >= 2,
+    strict_ihd = strict_ihd_inpatient | strict_ihd_outpatient
+  )
+```
+
+## Task 3: Identify possible prevalent IHD
+
+Use registry records before baseline.
+
+```{r}
+prevalent_registry_ihd <- event_data |> 
+  left_join(
+    cohort |> 
+      select(person_id, baseline_date),
+    by = "person_id"
+  ) |> 
+  filter(
+    broad_ihd,
+    !is.na(event_date),
+    event_date < baseline_date
+  ) |> 
+  distinct(person_id) |> 
+  mutate(prevalent_registry_ihd = TRUE)
+
+prevalent_registry_ihd
+```
+
+Discuss whether registry history alone is sufficient to identify all prevalent IHD.
+
+## Task 4: Select first qualifying events after baseline
+
+Create first broad and strict event dates after baseline.
+
+```{r}
+events_after_baseline <- event_data |> 
+  left_join(
+    cohort |> 
+      select(person_id, baseline_date),
+    by = "person_id"
+  ) |> 
+  filter(!is.na(event_date), event_date >= baseline_date)
+
+first_broad_event <- events_after_baseline |> 
+  filter(broad_ihd) |> 
+  group_by(person_id) |> 
+  slice_min(event_date, with_ties = FALSE) |> 
+  ungroup() |> 
+  select(
+    person_id,
+    broad_first_ihd_date = event_date,
+    broad_event_hospital = hospital,
+    broad_event_setting = setting
+  )
+
+first_strict_event <- events_after_baseline |> 
+  filter(strict_ihd) |> 
+  group_by(person_id) |> 
+  slice_min(event_date, with_ties = FALSE) |> 
+  ungroup() |> 
+  select(
+    person_id,
+    strict_first_ihd_date = event_date,
+    strict_event_hospital = hospital,
+    strict_event_setting = setting
+  )
+```
+
+## Task 5: Create a one-row-per-person dataset
+
+```{r}
+analysis_ready <- cohort |> 
+  left_join(prevalent_registry_ihd, by = "person_id") |> 
+  left_join(first_broad_event, by = "person_id") |> 
+  left_join(first_strict_event, by = "person_id") |> 
+  left_join(followup, by = "person_id") |> 
+  mutate(
+    prevalent_registry_ihd = replace_na(prevalent_registry_ihd, FALSE),
+    censor_date = pmin(
+      death_date,
+      administrative_end_followup,
+      na.rm = TRUE
+    ),
+    broad_event = !is.na(broad_first_ihd_date) &
+      broad_first_ihd_date <= censor_date,
+    strict_event = !is.na(strict_first_ihd_date) &
+      strict_first_ihd_date <= censor_date,
+    broad_followup_days = as.numeric(
+      coalesce(broad_first_ihd_date, censor_date) - baseline_date
+    )
+  )
+
+analysis_ready
+```
+
+Check whether you have one row per participant.
+
+```{r}
+analysis_ready |> 
+  count(person_id) |> 
+  filter(n > 1)
+```
+
+## Reflection
+
+1. How many people are classified as broad IHD events?
+2. How many are classified as strict IHD events?
+3. Which participants change classification?
+4. What information has been lost when the dataset changes from diagnosis-level to person-level?
+5. Which derivation decisions must be documented for reproducibility?

@@ -1,0 +1,224 @@
+---
+title: "Exercise 2: Time is part of the phenotype"
+format: html
+execute:
+  echo: true
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- inspect and parse dates stored in different formats;
+- identify incomplete and invalid dates;
+- construct timelines from linked health data;
+- distinguish first registry-recorded IHD from incident IHD;
+- define a potential index date.
+
+## Load packages and data
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(here)
+
+source(here("R", "01_helpers.R"))
+
+cohort <- read_csv(
+  here("data", "raw", "cohort_baseline.csv"),
+  show_col_types = FALSE
+) |> 
+  mutate(baseline_date = ymd(baseline_date))
+
+contacts <- read_csv(
+  here("data", "raw", "registry_contacts.csv"),
+  show_col_types = FALSE
+)
+
+diagnoses <- read_csv(
+  here("data", "raw", "registry_diagnoses.csv"),
+  show_col_types = FALSE
+)
+
+procedures <- read_csv(
+  here("data", "raw", "procedures.csv"),
+  show_col_types = FALSE
+)
+
+prescriptions <- read_csv(
+  here("data", "raw", "prescriptions.csv"),
+  show_col_types = FALSE
+)
+
+followup <- read_csv(
+  here("data", "raw", "death_followup.csv"),
+  show_col_types = FALSE
+)
+```
+
+## Task 1: Inspect raw dates
+
+Look at the raw date variables.
+
+```{r}
+contacts |> 
+  select(
+    contact_id,
+    person_id,
+    admission_date_raw,
+    discharge_date_raw,
+    contact_date_raw
+  )
+```
+
+Questions:
+
+1. Which date formats do you see?
+2. Which dates are missing?
+3. Which dates are incomplete or implausible?
+4. Is the discharge date always after the admission date?
+
+## Task 2: Parse dates
+
+Create parsed date variables.
+
+```{r}
+contacts_clean <- contacts |> 
+  mutate(
+    admission_date = parse_mixed_date(admission_date_raw),
+    discharge_date = parse_mixed_date(discharge_date_raw),
+    contact_date = parse_mixed_date(contact_date_raw)
+  )
+
+contacts_clean
+```
+
+Parse diagnosis and procedure dates.
+
+```{r}
+diagnoses_clean <- diagnoses |> 
+  mutate(
+    diagnosis_date = parse_mixed_date(diagnosis_date_raw)
+  )
+
+procedures_clean <- procedures |> 
+  mutate(
+    procedure_date = parse_mixed_date(procedure_date_raw)
+  )
+```
+
+## Task 3: Identify date-quality problems
+
+Find records with an unparseable admission date.
+
+```{r}
+contacts_clean |> 
+  filter(!is.na(admission_date_raw), is.na(admission_date)) |> 
+  select(contact_id, person_id, admission_date_raw)
+```
+
+Find records where discharge date is before admission date.
+
+```{r}
+contacts_clean |> 
+  filter(
+    !is.na(admission_date),
+    !is.na(discharge_date),
+    discharge_date < admission_date
+  ) |> 
+  select(
+    contact_id,
+    person_id,
+    admission_date,
+    discharge_date
+  )
+```
+
+Discuss:
+
+1. How should an invalid or incomplete date be handled?
+2. Should it be corrected, excluded, or flagged?
+3. What documentation would you need before correcting a value?
+
+## Task 4: Link diagnoses and contacts
+
+Create an event-level dataset.
+
+```{r}
+events <- diagnoses_clean |> 
+  left_join(
+    contacts_clean |> 
+      select(
+        contact_id,
+        person_id,
+        hospital,
+        department,
+        setting,
+        admission_date,
+        discharge_date,
+        contact_date
+      ),
+    by = c("contact_id", "person_id")
+  ) |> 
+  mutate(
+    event_date = coalesce(admission_date, contact_date, diagnosis_date)
+  )
+
+events |> 
+  arrange(person_id, event_date)
+```
+
+Questions:
+
+1. What does one row represent in `events`?
+2. Why might `event_date` differ from `diagnosis_date`?
+3. Which date would you use for an inpatient event?
+4. Which date would you use for an outpatient event?
+
+## Task 5: Create timelines
+
+Inspect these teaching cases:
+
+```{r}
+timeline_people <- c("P001", "P003", "P010", "P011", "P020")
+
+events |> 
+  filter(person_id %in% timeline_people) |> 
+  arrange(person_id, event_date)
+```
+
+Add relevant procedures and baseline dates.
+
+```{r}
+cohort |> 
+  filter(person_id %in% timeline_people) |> 
+  select(person_id, baseline_date, self_reported_prior_ihd)
+```
+
+```{r}
+procedures_clean |> 
+  filter(person_id %in% timeline_people) |> 
+  arrange(person_id, procedure_date)
+```
+
+Discuss each person:
+
+- **P001:** What is the likely first IHD event date?
+- **P003:** Is the 2012 registry record an incident IHD event?
+- **P010:** Is transfer between hospitals one event or two?
+- **P011:** What is wrong with the administrative dates?
+- **P020:** Should this person be eligible for first-event analysis after baseline?
+
+## Task 6: Define an index-date rule
+
+Write your group’s rule:
+
+> The index date for first IHD will be ...
+
+Also state:
+
+1. How will you identify IHD before baseline?
+2. How will you handle hospital transfers?
+3. How will you handle uncertain or incomplete dates?
+4. When does follow-up start?
+5. When does follow-up end?

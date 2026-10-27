@@ -1,0 +1,244 @@
+---
+title: "Exercise 3: Registry validation"
+format: html
+execute:
+  echo: true
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- define broad and strict registry IHD algorithms;
+- compare registry-based classification with chart review;
+- calculate PPV, sensitivity, specificity, and NPV;
+- interpret what validation results do and do not show.
+
+## Load packages and data
+
+```{r}
+library(tidyverse)
+library(here)
+
+source(here("R", "01_helpers.R"))
+
+diagnoses <- read_csv(
+  here("data", "raw", "registry_diagnoses.csv"),
+  show_col_types = FALSE
+)
+
+contacts <- read_csv(
+  here("data", "raw", "registry_contacts.csv"),
+  show_col_types = FALSE
+)
+
+lookup <- read_csv(
+  here("data", "raw", "icd_harmonisation_lookup.csv"),
+  show_col_types = FALSE
+)
+
+review <- read_csv(
+  here("data", "raw", "emr_review.csv"),
+  show_col_types = FALSE
+)
+```
+
+## Task 1: Create a broad registry algorithm
+
+Join registry diagnoses to the ICD lookup table.
+
+```{r}
+diagnosis_lookup <- diagnoses |> 
+  mutate(code_standardised = clean_code(diagnosis_code)) |> 
+  left_join(
+    lookup |> 
+      select(
+        coding_system,
+        code_standardised,
+        include_broad_ihd,
+        include_strict_ihd,
+        clinical_group
+      ),
+    by = c("coding_system", "code_standardised")
+  )
+
+diagnosis_lookup
+```
+
+Create a person-level broad registry indicator.
+
+```{r}
+broad_registry <- diagnosis_lookup |> 
+  group_by(person_id) |> 
+  summarise(
+    registry_ihd_broad = any(include_broad_ihd, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+broad_registry
+```
+
+## Task 2: Add contact information
+
+```{r}
+diagnosis_with_contact <- diagnosis_lookup |> 
+  left_join(
+    contacts |> 
+      select(
+        contact_id,
+        person_id,
+        hospital,
+        setting,
+        admission_date_raw,
+        discharge_date_raw,
+        contact_date_raw
+      ),
+    by = c("contact_id", "person_id")
+  )
+
+diagnosis_with_contact
+```
+
+## Task 3: Create a strict registry algorithm
+
+One possible strict algorithm is:
+
+- an IHD code in an inpatient contact with a primary diagnosis; OR
+- two or more outpatient IHD-coded contacts on different dates.
+
+Create an inpatient-primary indicator.
+
+```{r}
+strict_inpatient <- diagnosis_with_contact |> 
+  filter(
+    include_broad_ihd,
+    setting == "Inpatient",
+    diagnosis_position == "Primary"
+  ) |> 
+  distinct(person_id) |> 
+  mutate(strict_inpatient = TRUE)
+
+strict_inpatient
+```
+
+Count distinct outpatient IHD contact dates.
+
+```{r}
+strict_outpatient <- diagnosis_with_contact |> 
+  filter(
+    include_broad_ihd,
+    setting == "Outpatient"
+  ) |> 
+  distinct(person_id, contact_date_raw) |> 
+  count(person_id, name = "n_outpatient_ihd_contacts") |> 
+  mutate(
+    strict_outpatient = n_outpatient_ihd_contacts >= 2
+  )
+
+strict_outpatient
+```
+
+Combine the rules into one person-level strict indicator.
+
+```{r}
+strict_registry <- full_join(
+  strict_inpatient,
+  strict_outpatient,
+  by = "person_id"
+) |> 
+  mutate(
+    strict_inpatient = replace_na(strict_inpatient, FALSE),
+    strict_outpatient = replace_na(strict_outpatient, FALSE),
+    registry_ihd_strict = strict_inpatient | strict_outpatient
+  ) |> 
+  select(person_id, registry_ihd_strict)
+
+strict_registry
+```
+
+## Task 4: Build a validation dataset
+
+Use chart review as the provisional reference standard.
+
+```{r}
+validation <- review |> 
+  mutate(
+    chart_ihd_positive = chart_review_ihd %in% c("Yes", "Probable")
+  ) |> 
+  select(person_id, chart_ihd_positive, chart_review_ihd, reviewer_certainty) |> 
+  full_join(broad_registry, by = "person_id") |> 
+  full_join(strict_registry, by = "person_id") |> 
+  mutate(
+    registry_ihd_broad = replace_na(registry_ihd_broad, FALSE),
+    registry_ihd_strict = replace_na(registry_ihd_strict, FALSE)
+  )
+
+validation
+```
+
+## Task 5: Create a two-by-two table
+
+Broad algorithm:
+
+```{r}
+table(
+  Registry_broad = validation$registry_ihd_broad,
+  Chart_review = validation$chart_ihd_positive
+)
+```
+
+Strict algorithm:
+
+```{r}
+table(
+  Registry_strict = validation$registry_ihd_strict,
+  Chart_review = validation$chart_ihd_positive
+)
+```
+
+## Task 6: Calculate PPV
+
+For the broad algorithm:
+
+```{r}
+validation |> 
+  filter(registry_ihd_broad) |> 
+  summarise(
+    true_positives = sum(chart_ihd_positive),
+    false_positives = sum(!chart_ihd_positive),
+    ppv = true_positives / (true_positives + false_positives)
+  )
+```
+
+Repeat for the strict algorithm.
+
+```{r}
+validation |> 
+  filter(registry_ihd_strict) |> 
+  summarise(
+    true_positives = sum(chart_ihd_positive),
+    false_positives = sum(!chart_ihd_positive),
+    ppv = true_positives / (true_positives + false_positives)
+  )
+```
+
+## Task 7: Calculate sensitivity, specificity, and NPV
+
+Because the review data include people without registry codes, these measures can be estimated.
+
+For one chosen algorithm, calculate:
+
+- true positives;
+- false positives;
+- false negatives;
+- true negatives;
+- sensitivity;
+- specificity;
+- NPV.
+
+## Reflection
+
+1. Does high PPV imply high sensitivity?
+2. Why might a strict algorithm have higher PPV but lower sensitivity?
+3. What would happen if chart review had been conducted only among registry-positive people?
+4. Could validity differ by hospital, calendar period, diagnosis position, or care setting?

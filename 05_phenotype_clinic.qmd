@@ -1,0 +1,152 @@
+---
+title: "Exercise 5: Phenotype clinic: validation and reflection"
+format: html
+execute:
+  echo: true
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- compare alternative phenotype definitions;
+- investigate disagreement between registry and chart review;
+- conduct simple sensitivity analyses;
+- document a transparent phenotype protocol.
+
+## Load data
+
+```{r}
+library(tidyverse)
+library(here)
+
+review <- read_csv(
+  here("data", "raw", "emr_review.csv"),
+  show_col_types = FALSE
+)
+
+notes <- read_csv(
+  here("data", "raw", "emr_notes_excerpt.csv"),
+  show_col_types = FALSE
+)
+
+diagnoses <- read_csv(
+  here("data", "raw", "registry_diagnoses.csv"),
+  show_col_types = FALSE
+)
+
+contacts <- read_csv(
+  here("data", "raw", "registry_contacts.csv"),
+  show_col_types = FALSE
+)
+
+procedures <- read_csv(
+  here("data", "raw", "procedures.csv"),
+  show_col_types = FALSE
+)
+```
+
+## Task 1: Investigate discordant cases
+
+Focus on:
+
+```{r}
+discordant_people <- c(
+  "P002",
+  "P003",
+  "P004",
+  "P006",
+  "P010",
+  "P016",
+  "P017"
+)
+
+review |> 
+  filter(person_id %in% discordant_people)
+```
+
+```{r}
+notes |> 
+  filter(person_id %in% discordant_people)
+```
+
+```{r}
+diagnoses |> 
+  filter(person_id %in% discordant_people)
+```
+
+```{r}
+contacts |> 
+  filter(person_id %in% discordant_people)
+```
+
+```{r}
+procedures |> 
+  filter(person_id %in% discordant_people)
+```
+
+For each participant, discuss:
+
+1. Does the registry identify IHD?
+2. Does chart review identify IHD?
+3. Why might the sources disagree?
+4. Is the disagreement caused by coding, timing, clinical uncertainty, historical disease, or incomplete data?
+5. Would a different phenotype algorithm change the classification?
+
+## Task 2: Sensitivity analyses
+
+Compare the following algorithms:
+
+1. Any ICD-10 or ICD-9 IHD code.
+2. Inpatient primary IHD diagnosis only.
+3. At least two outpatient IHD contacts.
+4. Inpatient primary IHD diagnosis OR repeated outpatient IHD contacts.
+5. Registry diagnosis plus coronary procedure.
+
+For each algorithm, report:
+
+| Algorithm | Number of cases | PPV | Main concern |
+|---|---:|---:|---|
+| Broad | | | |
+| Inpatient primary only | | | |
+| Repeated outpatient only | | | |
+| Combined strict algorithm | | | |
+| Diagnosis plus procedure | | | |
+
+## Task 3: Complete a phenotype protocol
+
+Open:
+
+```text
+data/dictionary/phenotype_protocol_template.md
+```
+
+Complete the following sections:
+
+- target condition;
+- data sources;
+- ICD and SNOMED concepts;
+- included and excluded codes;
+- inpatient/outpatient rules;
+- primary/secondary diagnosis rules;
+- date rule;
+- prevalent IHD rule;
+- first-event rule;
+- validation strategy;
+- sensitivity analyses;
+- limitations.
+
+## Final reflection
+
+Discuss the following statements:
+
+1. “A registry code is a diagnosis.”
+2. “A chart review is always a perfect reference standard.”
+3. “A stricter phenotype is always better.”
+4. “A standard terminology solves interoperability problems.”
+5. “The same registry can give different answers depending on the phenotype definition.”
+
+Write a short group conclusion:
+
+> Our preferred phenotype is __________ because __________.  
+> Its most important limitation is __________.

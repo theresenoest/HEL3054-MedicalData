@@ -1,0 +1,183 @@
+---
+title: "Exercise 1: What does an IHD diagnosis mean?"
+format: html
+execute:
+  echo: true
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- identify relevant health-data sources for IHD research;
+- describe what one row represents in different datasets;
+- compare ICD, SNOMED CT, procedures, prescriptions, and clinical notes;
+- develop broad and strict registry-based IHD definitions.
+
+## Load packages and data
+
+```{r}
+library(tidyverse)
+library(here)
+
+cohort <- read_csv(
+  here("data", "raw", "cohort_baseline.csv"),
+  show_col_types = FALSE
+)
+
+diagnoses <- read_csv(
+  here("data", "raw", "registry_diagnoses.csv"),
+  show_col_types = FALSE
+)
+
+contacts <- read_csv(
+  here("data", "raw", "registry_contacts.csv"),
+  show_col_types = FALSE
+)
+
+notes <- read_csv(
+  here("data", "raw", "emr_notes_excerpt.csv"),
+  show_col_types = FALSE
+)
+
+review <- read_csv(
+  here("data", "raw", "emr_review.csv"),
+  show_col_types = FALSE
+)
+
+procedures <- read_csv(
+  here("data", "raw", "procedures.csv"),
+  show_col_types = FALSE
+)
+
+lookup <- read_csv(
+  here("data", "raw", "icd_harmonisation_lookup.csv"),
+  show_col_types = FALSE
+)
+```
+
+## Task 1: What does one row represent?
+
+For each dataset, discuss what one row represents.
+
+| Dataset | What does one row represent? |
+|---|---|
+| `cohort_baseline.csv` | |
+| `registry_contacts.csv` | |
+| `registry_diagnoses.csv` | |
+| `procedures.csv` | |
+| `emr_notes_excerpt.csv` | |
+| `emr_review.csv` | |
+
+Questions:
+
+1. Which files are person-level files?
+2. Which files can contain several rows for the same person?
+3. Which datasets can be linked using `person_id`?
+4. Which datasets can be linked using `contact_id`?
+
+## Task 2: Inspect selected cases
+
+Focus on the following participants:
+
+```{r}
+selected_people <- c("P001", "P002", "P003", "P004", "P005", "P006")
+
+diagnoses |> 
+  filter(person_id %in% selected_people) |> 
+  arrange(person_id)
+```
+
+```{r}
+contacts |> 
+  filter(person_id %in% selected_people) |> 
+  arrange(person_id)
+```
+
+```{r}
+notes |> 
+  filter(person_id %in% selected_people) |> 
+  arrange(person_id)
+```
+
+```{r}
+review |> 
+  filter(person_id %in% selected_people) |> 
+  arrange(person_id)
+```
+
+```{r}
+procedures |> 
+  filter(person_id %in% selected_people) |> 
+  arrange(person_id)
+```
+
+Discuss:
+
+1. Which participants have registry evidence of IHD?
+2. Which participants have evidence of IHD in clinical notes?
+3. Which participants have chart-reviewed IHD?
+4. Which cases may represent historical disease rather than a new event?
+5. Which cases show disagreement between data sources?
+
+## Task 3: Explore ICD code definitions
+
+```{r}
+lookup
+```
+
+Create a broad registry-based IHD definition:
+
+```{r}
+ihd_codes_broad <- lookup |> 
+  filter(include_broad_ihd) |> 
+  pull(code_raw)
+
+ihd_codes_broad
+```
+
+Identify registry diagnosis records included in this broad definition:
+
+```{r}
+diagnoses |> 
+  filter(diagnosis_code %in% ihd_codes_broad) |> 
+  arrange(person_id, diagnosis_date_raw)
+```
+
+## Task 4: Draft phenotype definitions
+
+In your group, write a definition for each of the following.
+
+### A. Broad registry definition
+
+> A participant is classified as having IHD if ...
+
+### B. Strict registry definition
+
+Consider:
+
+- inpatient versus outpatient contacts;
+- primary versus secondary diagnosis;
+- repeated outpatient diagnoses;
+- coronary procedures.
+
+> A participant is classified as having IHD if ...
+
+### C. Clinical reference definition
+
+Consider:
+
+- clinician notes;
+- SNOMED concepts;
+- angiography, PCI, or CABG;
+- discharge summaries;
+- structured chart review.
+
+> A participant is classified as having clinically documented IHD if ...
+
+## Reflection
+
+1. Is an ICD code always equivalent to a confirmed clinical diagnosis?
+2. Can a procedure support an IHD diagnosis without proving the timing of disease onset?
+3. Can a SNOMED concept be mapped perfectly to an ICD code?
+4. Why might a broad case definition be useful for chart review, but less appropriate for estimating first IHD events?
