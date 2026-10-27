@@ -1,5 +1,7 @@
 # Validating and using ischaemic heart disease data across records, registries, and time
 
+How can registry, EMR, procedure, and cohort data be combined to identify a valid and reproducible first-IHD-event outcome?
+
 This repository contains synthetic data and teaching materials for a master's-level
 health-data workshop.
 
