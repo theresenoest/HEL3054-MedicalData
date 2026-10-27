@@ -1,0 +1,4 @@
+snomed_code,snomed_term,clinical_group,comments
+53741008,Coronary arteriosclerosis,IHD,"Clinical concept that may not map one-to-one to a particular ICD code."
+22298006,Myocardial infarction,IHD,"May describe prior or acute MI; date and clinical context are required."
+57054005,Acute myocardial infarction,IHD,"Acute clinical concept; still requires confirmation of timing and episode."

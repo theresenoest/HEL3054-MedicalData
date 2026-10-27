@@ -1,0 +1,10 @@
+coding_system,code_raw,code_standardised,clinical_group,include_broad_ihd,include_strict_ihd,comments
+ICD-10,I20.9,I209,Angina pectoris,TRUE,FALSE,"May require repeated outpatient contacts or supporting evidence."
+ICD-10,I21.9,I219,Acute myocardial infarction,TRUE,TRUE,"Usually a specific acute IHD event."
+ICD-10,I22.0,I220,Subsequent myocardial infarction,TRUE,TRUE,"Included in IHD group; interpretation depends on prior event history."
+ICD-10,I25.1,I251,Chronic ischaemic heart disease,TRUE,TRUE,"Can represent prevalent disease rather than incident IHD."
+ICD-9,414.01,41401,Chronic ischaemic heart disease,TRUE,TRUE,"Historical ICD-9 code mapped to IHD for teaching purposes."
+ICD-10,I50.9,I509,Heart failure,FALSE,FALSE,"Not IHD; included as a competing cardiovascular diagnosis."
+ICD-10,I63.9,I639,Cerebral infarction,FALSE,FALSE,"Not IHD; included as a competing cardiovascular diagnosis."
+ICD-10,R07.4,R074,Chest pain unspecified,FALSE,FALSE,"Symptom code; does not establish IHD."
+ICD-10,J18.9,J189,Pneumonia unspecified,FALSE,FALSE,"Non-cardiovascular diagnosis."

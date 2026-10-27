@@ -1,0 +1,9 @@
+procedure_id,person_id,procedure_date_raw,procedure_code,procedure_name
+PR001,P001,2012-05-15,CAG,Coronary angiography
+PR002,P001,2012-05-16,PCI,Percutaneous coronary intervention
+PR003,P007,2011-02-10,CAG,Coronary angiography
+PR004,P007,2011-02-11,PCI,Percutaneous coronary intervention
+PR005,P010,2016-07-03,CAG,Coronary angiography
+PR006,P014,2010-12-11,CABG,Coronary artery bypass graft
+PR007,P018,2020-01-10,CAG,Coronary angiography
+PR008,P020,2004-04-04,CABG,Coronary artery bypass graft
