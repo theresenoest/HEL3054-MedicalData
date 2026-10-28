@@ -1,12 +1,7 @@
-# HEL3054-Medicaldataday
-One day I have responsibility for in HEL-3054
-
 # Validating and using ischaemic heart disease data across records, registries, and time
 
-This repository contains synthetic data and teaching materials for a master's-level
-health-data workshop.
-
-## Case
+--------------
+## Our case for the day
 
 Students work with a population-based cohort linked to:
 
@@ -33,15 +28,3 @@ The teaching focus is on:
 - registry validation;
 - data quality, metadata, harmonisation, and reproducible workflows.
 
-## Important
-
-All data in this repository are fictional and synthetic. They do not describe
-real people, institutions, hospitals, or patient records.
-
-## Setup
-
-1. Open `ihd-registry-validation-workshop.Rproj`.
-2. Install packages if needed:
-
-```r
-install.packages(c("tidyverse", "lubridate", "janitor", "here", "skimr"))
