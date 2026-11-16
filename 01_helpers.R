@@ -8,14 +8,22 @@ clean_code <- function(x) {
 }
 
 parse_mixed_date <- function(x) {
+  
+  # Convert dates or other input types safely to character first
+  x <- as.character(x)
+  
+  # Convert empty strings to missing values
+  x <- na_if(x, "")
+  
   suppressWarnings(
     coalesce(
-      ymd(x),
-      dmy(x),
-      ymd(str_replace_all(x, "/", "-"))
+      lubridate::ymd(x, quiet = TRUE),
+      lubridate::dmy(x, quiet = TRUE),
+      lubridate::mdy(x, quiet = TRUE)
     )
   )
 }
+
 
 contact_event_date <- function(admission_date, contact_date, diagnosis_date) {
   coalesce(admission_date, contact_date, diagnosis_date)
