@@ -1,7 +1,7 @@
 # HEL3054-MedicalData
 Today we will work with data from medical records and compiling data for analyses with a focus on describing our cases.
 
-Note from Therese 16.11.26 at 16.00: 
+**Note from Therese 16.11.26 at 16.00: **
 I have uploaded an R script under the branch R/99_solution_pipeline.R that describes how I would have done the whole cleaning and description of the IHD cases. I have also uploaded a document under /docs with suggested answers to some of the questions from the exercises today and the powerpoint slides you saw this morning. 
 Hope the day was useful for you and that you learnt some from the inspection and cleaning of a dataset. 
 Best of luck with your studies and hopefully future public health work!
