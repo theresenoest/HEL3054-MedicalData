@@ -1,0 +1,613 @@
+---
+title: "Exercise 6: Time to first IHD event — Kaplan-Meier curves and Cox regression"
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goals
+
+By the end of this exercise, you should be able to:
+
+- understand the structure of a time-to-event dataset;
+- identify time, event, censoring, and baseline predictor variables;
+- create and interpret a Kaplan-Meier curve;
+- perform and interpret a log-rank test;
+- fit and interpret a Cox proportional hazards regression model;
+- discuss how outcome definitions influence survival-analysis results.
+
+## Background
+
+This exercise uses a larger synthetic population-based cohort.
+
+The outcome is:
+
+> A first **strict registry-defined IHD event** after cohort baseline.
+
+The strict IHD phenotype is defined as:
+
+- an inpatient contact with a primary IHD diagnosis; **or**
+- at least two outpatient IHD-coded contacts on separate dates.
+
+Participants with possible prevalent IHD before baseline have already been excluded from the analysis-ready dataset.
+
+All data are synthetic and for teaching purposes only.
+
+------------------------------------------------------------------------
+
+# Part 1: Create and process the large synthetic dataset
+
+## Step 1: Generate the large synthetic data
+
+Run the following code once:
+
+```{r}
+source("R/10_generate_large_synthetic_data.R")
+```
+
+This creates synthetic files in:
+
+``` text
+data/large_raw/
+```
+
+The main files are:
+
+``` text
+cohort_baseline_large.csv
+registry_contacts_large.csv
+registry_diagnoses_large.csv
+procedures_large.csv
+prescriptions_large.csv
+emr_review_large.csv
+death_followup_large.csv
+```
+
+## Step 2: Run the large-data solution pipeline
+
+Run:
+
+```{r}
+source("R/99_solution_pipeline_large.R")
+```
+
+This script:
+
+1.  Reads the synthetic files.
+2.  Cleans dates and ICD codes.
+3.  Applies broad and strict IHD phenotype algorithms.
+4.  Identifies possible prevalent IHD.
+5.  Creates an analysis-ready first-event dataset.
+6.  Runs validation analyses.
+7.  Produces a Kaplan-Meier curve.
+8.  Fits Cox regression models.
+
+The main analysis dataset is saved as:
+
+``` text
+data/large_derived/analysis_ready_first_ihd.csv
+```
+
+------------------------------------------------------------------------
+
+# Part 2: Load the analysis-ready data
+
+## Step 3: Load packages
+
+```{r}
+library(tidyverse)
+library(survival)
+library(here)
+```
+
+## Step 4: Read the analysis-ready dataset
+
+```{r}
+analysis_ready <- read_csv(
+  here(
+    "data",
+    "large_derived",
+    "analysis_ready_first_ihd.csv"
+  ),
+  show_col_types = FALSE
+)
+```
+
+Inspect the data:
+
+```{r}
+glimpse(analysis_ready)
+```
+
+```{r}
+head(analysis_ready)
+```
+
+## Step 5: Understand the main variables
+
+Important variables include:
+
+| Variable | Meaning |
+|------------------------------------|------------------------------------|
+| `person_id` | Pseudonymous cohort participant ID |
+| `baseline_date` | Date of baseline cohort examination |
+| `age_at_baseline` | Age at baseline |
+| `sex` | Sex recorded at baseline |
+| `smoking_status` | Smoking status at baseline |
+| `systolic_bp_mmHg` | Baseline systolic blood pressure |
+| `total_cholesterol_mmol_l` | Baseline total cholesterol |
+| `diabetes_baseline` | Diabetes status at baseline |
+| `physical_activity` | Baseline physical activity |
+| `strict_event` | Whether a strict first IHD event occurred |
+| `strict_followup_years` | Time from baseline to first strict IHD event or censoring |
+| `death_date` | Date of death, if available |
+| `censor_date` | Date at which follow-up ended |
+
+------------------------------------------------------------------------
+
+# Part 3: Describe the first-event cohort
+
+## Step 6: Count participants and events
+
+```{r}
+analysis_ready |> 
+  summarise(
+    n_participants = n(),
+    n_first_ihd_events = sum(strict_event),
+    event_percentage = mean(strict_event) * 100,
+    median_followup_years = median(strict_followup_years)
+  )
+```
+
+### Questions
+
+1.  How many participants are included?
+2.  How many strict first IHD events occurred?
+3.  What proportion of participants experienced a strict IHD event?
+4.  What is the median follow-up time?
+5.  Why is follow-up time important when studying first events?
+
+## Step 7: Describe baseline characteristics by event status
+
+```{r}
+analysis_ready |> 
+  group_by(strict_event) |> 
+  summarise(
+    n = n(),
+    mean_age = mean(age_at_baseline),
+    percentage_male = mean(sex == "Male") * 100,
+    percentage_current_smoker = mean(smoking_status == "Current") * 100,
+    mean_systolic_bp = mean(systolic_bp_mmHg),
+    mean_cholesterol = mean(total_cholesterol_mmol_l),
+    percentage_diabetes = mean(diabetes_baseline == "Yes") * 100,
+    .groups = "drop"
+  )
+```
+
+### Questions
+
+1.  Are participants with IHD events older on average?
+2.  Is current smoking more common among those with events?
+3.  Are blood pressure and cholesterol higher among people with events?
+4.  Can these crude comparisons establish causality? Why or why not?
+
+------------------------------------------------------------------------
+
+# Part 4: Kaplan-Meier curves
+
+## Background
+
+Kaplan-Meier curves estimate the probability of remaining free from an event over time.
+
+In this exercise:
+
+- **Time variable:** `strict_followup_years`
+- **Event variable:** `strict_event`
+- **Outcome:** first strict IHD event
+- **Censoring:** death before IHD event or administrative end of follow-up
+
+## Step 8: Create a Kaplan-Meier object
+
+```{r}
+km_fit_smoking <- survfit(
+  Surv(strict_followup_years, strict_event) ~ smoking_status,
+  data = analysis_ready
+)
+
+km_fit_smoking
+```
+
+## Step 9: Plot Kaplan-Meier curves by smoking status
+
+```{r}
+plot(
+  km_fit_smoking,
+  col = c("#1B9E77", "#D95F02", "#7570B3"),
+  lwd = 2,
+  xlab = "Years since cohort baseline",
+  ylab = "Probability of remaining free from first strict IHD event",
+  mark.time = FALSE,
+  conf.int = FALSE
+)
+
+legend(
+  "bottomleft",
+  legend = levels(analysis_ready$smoking_status),
+  col = c("#1B9E77", "#D95F02", "#7570B3"),
+  lwd = 2,
+  title = "Smoking status at baseline"
+)
+
+title(
+  main = "Kaplan-Meier curve: time to first strict IHD event"
+)
+```
+
+## Step 10: Interpret the Kaplan-Meier curve
+
+Discuss:
+
+1.  Which smoking group appears to have the lowest probability of remaining free from IHD?
+2.  Which group appears to have the highest probability of remaining free from IHD?
+3.  Why does a lower curve indicate a higher event rate?
+4.  Does the Kaplan-Meier curve adjust for age, sex, blood pressure, or cholesterol?
+5.  Why might smoking groups differ in age or other baseline risk factors?
+
+------------------------------------------------------------------------
+
+# Part 5: Log-rank test
+
+The log-rank test compares survival curves between groups.
+
+## Step 11: Run a log-rank test
+
+```{r}
+log_rank_smoking <- survdiff(
+  Surv(strict_followup_years, strict_event) ~ smoking_status,
+  data = analysis_ready
+)
+
+log_rank_smoking
+```
+
+Calculate a p-value:
+
+```{r}
+log_rank_p_value <- pchisq(
+  log_rank_smoking$chisq,
+  df = length(log_rank_smoking$n) - 1,
+  lower.tail = FALSE
+)
+
+log_rank_p_value
+```
+
+## Interpretation
+
+The null hypothesis is:
+
+> The survival curves are the same in all smoking groups.
+
+### Questions
+
+1.  Is there evidence that time to first IHD event differs by smoking status?
+2.  What does a small p-value suggest?
+3.  Does a statistically significant log-rank test show that smoking causes IHD?
+4.  What confounding factors might influence the association?
+
+------------------------------------------------------------------------
+
+# Part 6: Cox regression
+
+## Background
+
+A Cox proportional hazards model estimates associations between predictors and the instantaneous rate, or hazard, of an event.
+
+A hazard ratio:
+
+- greater than `1` suggests a higher hazard of first IHD event;
+- less than `1` suggests a lower hazard;
+- equal to `1` suggests no difference in hazard.
+
+## Step 12: Unadjusted Cox regression for smoking
+
+```{r}
+cox_model_smoking <- coxph(
+  Surv(strict_followup_years, strict_event) ~ smoking_status,
+  data = analysis_ready
+)
+
+summary(cox_model_smoking)
+```
+
+### Interpretation
+
+The reference group is:
+
+``` text
+Never smokers
+```
+
+The model estimates hazard ratios for:
+
+- former smokers versus never smokers;
+- current smokers versus never smokers.
+
+### Questions
+
+1.  What is the hazard ratio for current smokers compared with never smokers?
+2.  Is the confidence interval above 1?
+3.  What does this suggest about the rate of first strict IHD events?
+4.  Why is this model described as unadjusted?
+
+------------------------------------------------------------------------
+
+## Step 13: Adjusted Cox regression
+
+Fit a model including several baseline risk factors.
+
+```{r}
+cox_model_adjusted <- coxph(
+  Surv(strict_followup_years, strict_event) ~
+    age_at_baseline +
+    sex +
+    smoking_status +
+    systolic_bp_mmHg +
+    total_cholesterol_mmol_l +
+    diabetes_baseline +
+    bmi_kg_m2 +
+    physical_activity +
+    education,
+  data = analysis_ready
+)
+
+summary(cox_model_adjusted)
+```
+
+## Step 14: Create a hazard-ratio table
+
+```{r}
+cox_summary <- summary(cox_model_adjusted)
+
+cox_results <- tibble(
+  variable = rownames(cox_summary$coefficients),
+  hazard_ratio = exp(cox_summary$coefficients[, "coef"]),
+  lower_95_ci = exp(cox_summary$conf.int[, "lower .95"]),
+  upper_95_ci = exp(cox_summary$conf.int[, "upper .95"]),
+  p_value = cox_summary$coefficients[, "Pr(>|z|)"]
+) |> 
+  mutate(
+    across(
+      c(hazard_ratio, lower_95_ci, upper_95_ci),
+      ~ round(.x, 3)
+    ),
+    p_value = signif(p_value, 3)
+  )
+
+cox_results
+```
+
+## Interpretation questions
+
+1.  What is the adjusted hazard ratio for current smoking?
+2.  Does the smoking association change after adjustment?
+3.  What is the hazard ratio associated with one additional year of age?
+4.  What is the hazard ratio associated with one mmHg higher systolic blood pressure?
+5.  How could you make blood pressure easier to interpret, for example per 10 mmHg?
+6.  Which variables are likely risk factors for IHD?
+7.  Which variables may be confounders of the association between smoking and IHD?
+
+------------------------------------------------------------------------
+
+# Part 7: Rescale a continuous predictor
+
+Hazard ratios for a one-unit increase in blood pressure may be difficult to interpret.
+
+Create blood pressure per 10 mmHg:
+
+```{r}
+analysis_ready <- analysis_ready |> 
+  mutate(
+    systolic_bp_per_10 = systolic_bp_mmHg / 10
+  )
+```
+
+Fit a model using blood pressure per 10 mmHg:
+
+```{r}
+cox_model_bp10 <- coxph(
+  Surv(strict_followup_years, strict_event) ~
+    age_at_baseline +
+    sex +
+    smoking_status +
+    systolic_bp_per_10 +
+    total_cholesterol_mmol_l +
+    diabetes_baseline,
+  data = analysis_ready
+)
+
+summary(cox_model_bp10)
+```
+
+### Question
+
+How would you interpret the hazard ratio for `systolic_bp_per_10`?
+
+Suggested wording:
+
+> The hazard ratio represents the relative rate of first strict IHD event associated with a 10 mmHg higher baseline systolic blood pressure, adjusted for the other variables in the model.
+
+------------------------------------------------------------------------
+
+# Part 8: Check the proportional hazards assumption
+
+The Cox model assumes that hazard ratios are proportional over time.
+
+## Step 15: Run a proportional-hazards test
+
+```{r}
+ph_test <- cox.zph(cox_model_adjusted)
+
+ph_test
+```
+
+Plot the test for smoking status:
+
+```{r}
+plot(ph_test, var = "smoking_statusCurrent")
+abline(h = 0, lty = 2, col = "red")
+```
+
+## Discussion
+
+1.  What does the proportional hazards assumption mean?
+2.  What might suggest that the assumption is violated?
+3.  Why should a significant test be interpreted cautiously in very large datasets?
+4.  What could researchers do if the assumption is not reasonable?
+
+Possible approaches include:
+
+- stratification;
+- time-varying effects;
+- splitting follow-up time;
+- alternative survival models;
+- reporting that the assumption may not hold.
+
+------------------------------------------------------------------------
+
+# Part 9: Outcome definitions and sensitivity analyses
+
+The analysis above uses:
+
+``` text
+strict_event
+```
+
+This is based on the stricter registry phenotype.
+
+The dataset also contains:
+
+``` text
+broad_event
+```
+
+This is based on any qualifying IHD registry diagnosis code.
+
+## Step 16: Compare broad and strict outcomes
+
+```{r}
+analysis_ready |> 
+  summarise(
+    broad_events = sum(broad_event),
+    strict_events = sum(strict_event),
+    broad_event_percentage = mean(broad_event) * 100,
+    strict_event_percentage = mean(strict_event) * 100
+  )
+```
+
+### Questions
+
+1.  Which definition identifies more events?
+2.  Why might the broad phenotype identify more events?
+3.  Why might some broad events not represent clinically convincing first IHD events?
+4.  Why might the strict phenotype miss true IHD cases?
+5.  How could outcome misclassification affect hazard-ratio estimates?
+
+------------------------------------------------------------------------
+
+# Part 10: Optional sensitivity analysis with broad outcome
+
+Fit an adjusted Cox model using the broad outcome.
+
+```{r}
+cox_model_broad <- coxph(
+  Surv(broad_followup_years, broad_event) ~
+    age_at_baseline +
+    sex +
+    smoking_status +
+    systolic_bp_mmHg +
+    total_cholesterol_mmol_l +
+    diabetes_baseline +
+    bmi_kg_m2 +
+    physical_activity +
+    education,
+  data = analysis_ready
+)
+
+summary(cox_model_broad)
+```
+
+Compare the smoking estimates from the strict and broad models.
+
+```{r}
+strict_smoking <- summary(cox_model_adjusted)$coefficients[
+  "smoking_statusCurrent",
+  c("coef", "Pr(>|z|)")
+]
+
+broad_smoking <- summary(cox_model_broad)$coefficients[
+  "smoking_statusCurrent",
+  c("coef", "Pr(>|z|)")
+]
+
+tibble(
+  outcome_definition = c("Strict IHD phenotype", "Broad IHD phenotype"),
+  log_hazard_ratio_current_smoking = c(
+    strict_smoking["coef"],
+    broad_smoking["coef"]
+  ),
+  hazard_ratio_current_smoking = exp(c(
+    strict_smoking["coef"],
+    broad_smoking["coef"]
+  )),
+  p_value = c(
+    strict_smoking["Pr(>|z|)"],
+    broad_smoking["Pr(>|z|)"]
+  )
+)
+```
+
+------------------------------------------------------------------------
+
+# Part 11: Final reflection
+
+Discuss these questions in your group.
+
+1.  What is the difference between:
+
+    - a first registry-recorded IHD event;
+    - a first clinically documented IHD event;
+    - an incident IHD event?
+
+2.  Why were people with possible prevalent IHD excluded from this analysis?
+
+3.  What are the advantages and limitations of Kaplan-Meier curves?
+
+4.  What is the difference between:
+
+    - crude comparison of event proportions;
+    - Kaplan-Meier analysis;
+    - Cox regression?
+
+5.  Why is a high-quality, well-documented phenotype important before fitting a survival model?
+
+6.  Could two researchers obtain different Cox regression estimates using the same cohort and registry data?
+
+7.  Which decisions could lead to different results?
+
+    - ICD code list;
+    - broad or strict phenotype;
+    - inpatient/outpatient rules;
+    - primary/secondary diagnosis rules;
+    - definition of prevalent disease;
+    - index date;
+    - censoring rule;
+    - handling of hospital transfers;
+    - handling of missing or invalid dates.
+
+## Take-home message
+
+> Survival analysis does not remove problems with outcome definition.\
+> A Kaplan-Meier curve or Cox regression model is only as meaningful as the data, time rules, phenotype definition, and validation procedures on which it is based.
